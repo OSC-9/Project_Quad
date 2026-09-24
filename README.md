@@ -1,3 +1,4 @@
 # Project_Quad
-A Customizable Drone Build For Dynamic Episodes
+A Customizable Drone Build For Dynamic Episode's
+
 In Progress...
