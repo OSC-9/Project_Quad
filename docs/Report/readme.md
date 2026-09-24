@@ -1,6 +1,6 @@
-# Project Quad Report
+# Project Quad Report 
 
-> An end-to-end, bare-metal quadcopter flight control system engineered from first principles on the ESP32 WROOM-32 dual-core microcontroller, based on the specifications outlined in the project file Quad. Designed to meet the rigorous physical and computational demands of high-performance, heavy-lift, and tactical-grade humanitarian payloads, this platform explicitly abandons consumer flight stacks (e.g., Betaflight, ArduPilot). It implements real-time hardware-level serial protocol decoding, deterministic RTOS scheduling, dual-axis cascade PID control loops, and multi-tier failsafe redundancies natively in C/C++.
+> An end-to-end, bare-metal quadcopter flight control system engineered from first principles on the ESP32 WROOM-32 dual-core microcontroller, based on the specifications outlined in the project file Quad. Designed to meet the rigorous physical and computational demands of high-performance, heavy-lift, and tactical-grade humanitarian payloads, this platform explicitly abandons consumer flight stacks. It implements real-time hardware-level serial protocol decoding, deterministic RTOS scheduling, dual-axis cascade PID control loops, and multi-tier failsafe redundancies natively in C/C++.
 
 ---
 
@@ -23,7 +23,6 @@ Project Quad establishes absolute deterministic authority over signal processing
 To guarantee electromagnetic interference (EMI) immunity in high-current operational envelopes, the hardware footprint is rigidly segmented. Logic-level signals are physically and electrically isolated from the main propulsion power plane.
 
 ### 2.1 Power Distribution & Voltage Telemetry Matrix
-
 Manages raw high-current loads while providing precision low-voltage analog telemetry to the MCU.
 
 | Subsystem Component | Electrical Path / Interface | Technical Specification | Operational Theory & Limits |
@@ -35,7 +34,6 @@ Manages raw high-current loads while providing precision low-voltage analog tele
 | **ADC Interrogation** | Divider Node $\rightarrow$ GPIO 34 | ADC1_CH6 (12-bit) | Configured for 11dB attenuation (0-3.3V range). Samples at 100 Hz with hardware oversampling to filter ESC switching noise. |
 
 ### 2.2 Inertial Measurement Unit (IMU) Array
-
 Extracts raw spatial orientation data via the MPU-6050 6-Degree-of-Freedom MEMS sensor.
 
 | Subsystem Component | Electrical Path / Interface | Technical Specification | Operational Theory & Limits |
@@ -47,7 +45,6 @@ Extracts raw spatial orientation data via the MPU-6050 6-Degree-of-Freedom MEMS 
 | **Accelerometer Range**| Internal Register `0x1C` | ±8g | Configured for a scale factor of 4096 LSB/g. Provides gravity vector stability against severe motor vibration. |
 
 ### 2.3 Command & Control (C2) Link (SBUS Protocol)
-
 Decodes inverted, high-speed serial data natively without CPU-blocking interrupts.
 
 | Subsystem Component | Electrical Path / Interface | Technical Specification | Operational Theory & Limits |
@@ -58,8 +55,7 @@ Decodes inverted, high-speed serial data natively without CPU-blocking interrupt
 | **Logic Inversion** | Software/Hardware Invert | Inverted TTL | SBUS natively uses inverted logic. Handled via UART hardware inversion registers in the ESP-IDF/Arduino core. |
 
 ### 2.4 Propulsion Actuation Matrix (MCPWM)
-
-Bypasses standard software timers (like `ledc`) in favor of the Motor Control PWM (MCPWM) peripheral for jitter-free, microsecond-accurate pulse generation.
+Bypasses standard software timers in favor of the Motor Control PWM (MCPWM) peripheral for jitter-free, microsecond-accurate pulse generation.
 
 | Subsystem Component | Electrical Path / Interface | Technical Specification | Operational Theory & Limits |
 | :--- | :--- | :--- | :--- |
@@ -70,7 +66,6 @@ Bypasses standard software timers (like `ledc`) in favor of the Motor Control PW
 | **Pulse Envelope** | Hardware Timer Bounds | 1000 µs - 1850 µs | 1000 µs asserts absolute motor stop; 1850 µs acts as an artificial ceiling to prevent ESC desynchronization under high load. |
 
 ### 2.5 Visual Diagnostics & Failsafe Feedback
-
 Outputs autonomous, line-of-sight state feedback independent of a digital ground control station.
 
 | Subsystem Component | Electrical Path / Interface | Technical Specification | Operational Theory & Limits |
@@ -84,7 +79,7 @@ Outputs autonomous, line-of-sight state feedback independent of a digital ground
 ## 3. Low-Level Protocol Integration
 
 ### 3.1 I2C Register Map & DMA Transfer
-The primary loop reads 14 consecutive bytes starting from the MPU-6050 `ACCEL_XOUT_H` (`0x3B`) register in a single hardware transaction.
+The primary loop reads 14 consecutive bytes starting from the MPU-6050 `ACCEL_XOUT_H` (`0x3B`) register in a single hardware transaction to minimize clock overhead.
 * `0x3B` to `0x40`: Accelerometer High/Low Bytes (X, Y, Z)
 * `0x41` to `0x42`: Temperature High/Low Bytes (Discarded in processing)
 * `0x43` to `0x48`: Gyroscope High/Low Bytes (X, Y, Z)
@@ -143,32 +138,49 @@ $$\begin{bmatrix} \theta_{\text{fused}}(t) \\ \phi_{\text{fused}}(t) \end{bmatri
 Flight stability relies on a nested dual-loop Proportional-Integral-Derivative (PID) controller. The outer loop dictates the vehicle's position (attitude), and the inner loop calculates the rotational torque required to reach that position.
 
 **Outer Loop (Attitude / Position Control):**
-Calculates the required angular velocity vector.
 $$e_{\text{angle}}(t) = \theta_{\text{target}}(t) - \theta_{\text{fused}}(t)$$
 $$\omega_{\text{target}}(t) = K_{p,\text{angle}} \cdot e_{\text{angle}}(t)$$
 
 **Inner Loop (Rate / Gyro Control):**
-Generates the final actuator torque command. Includes an anti-windup clamp on the integral term to prevent saturation during hard maneuvers, and a low-pass filter on the derivative term to ignore high-frequency mechanical noise.
 $$e_{\text{rate}}(t) = \omega_{\text{target}}(t) - \omega_{\text{gyro}}(t)$$
 $$U_{\text{PID}}(t) = K_{p,\text{rate}} \cdot e_{\text{rate}}(t) + K_{i,\text{rate}} \int_0^t e_{\text{rate}}(\tau) d\tau + K_{d,\text{rate}} \cdot \frac{d}{dt}\left( e_{\text{rate}}(t) \right)$$
 
 ---
 
-## 6. Actuator Kinematics & Mixer Geometry
+## 6. Digital Signal Processing (DSP) & Harmonic Filtering
+
+To scale this bare-metal platform for heavy-lift industrial rotors, raw sensor data must be scrubbed of mechanical resonance before entering the PID loop. 
+
+* **Biquad Low-Pass Filter (PT1):** Applied directly to the $D$-term of the inner rate loop. The derivative calculation strictly amplifies high-frequency motor noise. Applying a discrete-time First-Order Low-Pass Filter (PT1) at a 80 Hz cutoff frequency smooths the torque output, preventing motor oscillation (hot motors) without introducing unacceptable phase delay.
+* **Software Notch Filtering:** Heavy robotics exhibit specific resonant frequencies based on frame geometry and propeller pitch. A software-defined notch filter is positioned mathematically just after gyro acquisition to aggressively attenuate the exact frequency band of the propulsion system's mechanical hum.
+
+---
+
+## 7. Actuator Kinematics & Mixer Geometry
 
 The independent outputs of the PID controller ($U_{\text{Pitch}}$, $U_{\text{Roll}}$, $U_{\text{Yaw}}$) are dynamically mixed with the pilot's base throttle input to calculate specific PWM duty cycles for the X-frame motor layout.
 
 $$\begin{bmatrix} \text{ESC}_1 \\ \text{ESC}_2 \\ \text{ESC}_3 \\ \text{ESC}_4 \end{bmatrix} = \begin{bmatrix} 1 & +1 & +1 & -1 \\ 1 & +1 & -1 & +1 \\ 1 & -1 & +1 & +1 \\ 1 & -1 & -1 & -1 \end{bmatrix} \begin{bmatrix} U_{\text{Throttle}} \\ U_{\text{Pitch}} \\ U_{\text{Roll}} \\ U_{\text{Yaw}} \end{bmatrix}$$
 
 **Hardware Clamping Matrix:**
-To prevent CPU integer overflow and guarantee the MCPWM hardware does not transmit an invalid signal (which would cause an ESC reboot mid-flight), the final outputs are rigidly clamped.
+To prevent CPU integer overflow and guarantee the MCPWM hardware does not transmit an invalid signal (which would trigger a mid-flight ESC reboot), the final outputs are rigidly clamped.
 $$\text{ESC}_n = \max(1000, \min(\text{ESC}_n, 1850)) \quad \text{for } n \in \{1, 2, 3, 4\}$$
 
 ---
 
-## 7. Failsafe State Machine & Tactical Redundancy
+## 8. Tactical Humanitarian & Industrial Payload Integration
 
-The overarching firmware state machine continuously monitors subsystem health. A catastrophic failure in telemetry or signal link will immediately trigger hardware interlocks.
+Project Quad is structured as a foundational flight module specifically engineered for heavy robotics and UNODA/UNOPS humanitarian deployments (e.g., autonomous medical supply drops, Unexploded Ordnance (UXO) scanning). 
+
+* **EMI & Environmental Hardening:** The logic boards must be encased in a grounded carbon/copper Faraday cage to prevent RF interference from 30A+ power lines. Conformal coating (acrylic or silicone) is applied to the ESP32 and MPU-6050 to prevent logic-level short circuits in high-humidity or dust-heavy operational theaters.
+* **Payload Agnosticism:** Because the state-estimation (Core 1) is entirely decoupled from external comms (Core 0), secondary microcontrollers (like a Jetson Orin Nano) can be bridged via UART to send autonomous $\theta_{\text{target}}$ navigation commands without ever jeopardizing the primary low-level flight loop stability.
+* **Vibration Isolation:** The MPU-6050 is suspended on optimized silicone vibration dampeners (calibrated for the drone's specific mass) to physically reject frame resonance before it ever hits the digital DSP filters.
+
+---
+
+## 9. Failsafe State Machine & Tactical Redundancy
+
+A catastrophic failure in telemetry or signal link will immediately trigger hardware interlocks.
 
 | Operational State | Invocation Condition | Firmware Execution & Motor Logic | Visual Feedback Output |
 | :--- | :--- | :--- | :--- |
