@@ -1,4 +1,4 @@
-# 🚁 Hardware Interconnect & Modular Wiring Schematics
+# Hardware Interconnect & Wiring Schematics
 
 This document breaks down the full flight controller hardware schematic into isolated, easy-to-read subsystem modules. 
 
