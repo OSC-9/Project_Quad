@@ -3,9 +3,8 @@
 
 ### 1. System Architecture
 
-V_LiPo (Pack Input) ────[ R1: 10kΩ ]────┬────[ R2: 2.2kΩ ]──── GND
-│
-└─── GPIO 34 (ADC1 Channel 6)
+Voltage_LiPo  ->  R1: 10kΩ ->  R2: 2.2kΩ  ─> GND 
+───> GPIO 34 (ADC1 Channel 6)
 
 ### 2. Mathematical Equations
 
