@@ -6,18 +6,16 @@
 ---
 
 ## 1. System Architecture
-Remote Transmitter (TX) ──(2.4GHz RF)──► SBUS RX Receiver
+Remote Transmitter (TX) | (2.4GHz RF) | SBUS RX Receiver
 │
 (Inverted 100kbps 8E2)
 │
-▼
 ESP32 GPIO 16 (UART2 RX)
 │
 [ 11-Bit Frame Unpacker ]
 │
 [ Stick Deadband Filter ]
 │
-▼
 PWM Signals (1000µs - 2000µs)
 
 
